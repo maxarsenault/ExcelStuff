@@ -7,18 +7,14 @@ if ( isset($_GET['id']) && is_numeric( $_GET['id'] ) ) {
   $fetch_id = 0 ;
 }
 
-ini_set('display_errors',1);
-error_reporting(E_ALL);
-
 if ( isset( $_FILES['fileupload']['name'] ) && trim($_FILES['fileupload']['name']) != "" ) {
-
   $filename = $_FILES['fileupload']['name'] ;
   $tmpfilename = $_FILES['fileupload']['tmp_name'] ;
   if ( move_uploaded_file($tmpfilename, EXCEL_UPLOAD_DIR.$filename ) ) {
     $fetch_id = ExcelExtractor::processExcel(EXCEL_UPLOAD_DIR.$filename) ;
   } else {
     echo "<div class='error'>There was an error moving " . $tmpfilename . " to " . EXCEL_UPLOAD_DIR.$filename . "</div>" ;
-	die() ;
+    die() ;
   }
 }
 ?>
@@ -32,8 +28,8 @@ if ( isset( $_FILES['fileupload']['name'] ) && trim($_FILES['fileupload']['name'
   <form action="<?php echo $_SERVER['PHP_SELF'] ; ?>" method="post" enctype="multipart/form-data">
     <div id="tool-bar">
       <div id="upload-div">
-          <input type="file" name="fileToUpload" id="fileToUpload">
-          <label class="upload-label" for="fileToUpload" >Upload xlsx file...</label>
+          <input type="file" name="fileupload" id="fileupload">
+          <label class="upload-label" for="fileupload" >Upload xlsx file...</label>
       </div>
     </div>
   </form>
@@ -83,7 +79,9 @@ if ( isset( $_FILES['fileupload']['name'] ) && trim($_FILES['fileupload']['name'
         }) ;
       }
     })();
-    $("#fileToUpload").change(function(){$("form").submit();}) ;
+    $("#fileupload").change(function(){
+      $("form").submit();
+    }) ;
     
   </script>
 </body>

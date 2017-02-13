@@ -38,7 +38,7 @@ class ExcelExtractor {
     $stmt = $conn->prepare("INSERT INTO excel_json (excel_id, json_string) values(DEFAULT, :value) ;") ;
     $stmt->bindParam( ":value", $json ) ;
     $stmt->execute();
-
+    
     return $conn->lastInsertId() ;
   }
   
