@@ -1,0 +1,1002 @@
+<?
+
+include_once $_SERVER['DOCUMENT_ROOT'] . "/exceltool8/class/excelchartrow.php";
+
+class ExcelChart {
+
+  private static $lists = array() ;
+
+  private $rows ;
+  private $sharedStringHandler ;
+  private $labelsIndex ;
+  private $title ;
+  
+  function __construct( $shared ) {
+
+    $this->rows = array() ;
+    $this->sharedStringHandler = $shared ;
+	$this->labelsIndex = 0 ;
+	$this->title = "" ;
+  }
+
+  public static function addList( $row, $shared ) {
+  
+    $listType = $shared->getCellValue( $row->c[1] ) ;
+	
+	if ( !isset( $lists[$listType] ) ) {
+	  $lists[$listType] = array() ;
+	}
+	
+    for ( $i = 2 ; $i < count( $row->c ) ; $i++ ) {
+	  $value = $shared->getCellValue( $row->c[$i] ) ;
+	  foreach( explode(',',$value) as $val ) {
+        ExcelChart::$lists[ $listType ] = trim($val) ;
+	  }
+    }
+  }
+  
+  public static function getLists( $listType ) {
+    return ExcelChart::$lists[ $listType ] ;
+  }
+  
+  public function chartAsJSON() {
+    $jsonRows = array() ;
+  
+    foreach( $this->rows as $row ) {
+      foreach( $row->getCells() as $key => $str ) {
+        
+        $jsonRows[] = array( $key, $row->getRowNum(), $str ) ;
+      }
+    }
+    
+    return json_encode( $jsonRows ) ;
+  }
+  
+  public function addRow( $row ) {
+    $this->rows[] = new ExcelChartRow( $row, $this->sharedStringHandler ) ;
+  }
+
+  
+  public function appendToXML( $xml, $sharedDest ) {
+ 
+    $sheet = $xml->sheetData[0] ;
+	
+	
+	$currentRowIndex = trim( $sheet->row[ count($sheet->row) - 1 ]->attributes()->r ) + 2 ;
+  
+    foreach( $this->rows as $row ) {
+	
+      $row->appendToXML( $sheet, $sharedDest, $this->sharedStringHandler, $currentRowIndex ) ;
+	  $currentRowIndex++ ;
+	}
+  
+  }
+  
+  private function findLabelIndexes( $row, $list, $shared ) {
+  
+    $colIndexList = array() ;
+  
+  	$colIndexList['E'] = 1 ;
+  
+    $key = 1 ;
+	
+	$row_length = count($row->c) ;
+    for ( $i = $row_length - 1 ; $i >= 0 ; $i-- ) {
+	  if ( ($cellVal = $shared->getCellValue( $row->c[$i] )) != "" && isset( $list[ $cellVal ] ) ) {
+	    $colIndexList[ ExcelFunctions::stripCellCol( $row->c[$i] ) ] = 1 ;
+	  }
+	}
+	
+	return $colIndexList ;
+  
+  }
+  
+  
+  public function appendStringToXML( $string, $color, $sheet, $sharedDest, $sharedSource, $currentRowIndex, $validColList ) {
+  
+    $row = $sheet->addChild('row') ;
+	$row->addAttribute('r', $currentRowIndex) ;
+    $row->addAttribute('x14ac:dyDescent', '0.25') ;
+    $row->addAttribute('spans', '1:22') ;
+	
+	$destCol = 1 ;
+	
+    for ( $i = 0 ; $i < count($validColList) ; $i++ ) {
+	
+	  $cell = $row->addChild('c', "") ;
+	  
+	  
+	  $cell->addAttribute( 'r', PHPExcel_Cell::stringFromColumnIndex( $destCol ) . $currentRowIndex ) ;
+	  if ( $color !== "" ) {
+	    $cell->addAttribute( 's', $color ) ;
+	  }
+	  
+	  if ( $i == 0 ) {
+	    $index = $sharedDest->sharedStringIndex( $string) ;
+		//error_log( "Do we find the index? : " . $index ) ;
+	    if ( $index === false ) {
+		  //error_log("looks like the index is false") ;
+		  $index = $sharedDest->addSharedString( $string ) ;
+		}
+		//error_log( "Index value: " . $index ) ;
+	    $cell->addChild( 'v', $index ) ;
+		$cell->addAttribute( 't', 's' ) ;
+	  }
+	  
+	  $destCol++ ;
+	}
+  
+  } 
+  
+  public function appendSegmentChart( $xml, $sharedDest ) {
+  
+    $sheet = $xml->sheetData[0] ; 
+	
+	$colList = array() ;
+	if ( isset($_POST['year']) && isset($_POST['quarter']) && is_array($_POST['year']) && is_array($_POST['quarter']) ) {
+	  foreach( $_POST['year'] as $year ) {
+	    foreach( $_POST['quarter'] as $quarter ) {
+	      $colList[ $year . $quarter ] = 1 ;
+	    }
+	  }
+	} else {
+	  $quarter = 'YET' ;
+	}
+	
+	if ( count($colList) == 0 ) {
+	  $colList = array( "2014YET" => 1, "2013YET" => 1 ) ;
+	}
+	
+	//error_log( "LABELSINDEX: " . $this->labelsIndex ) ;
+	$validColList = $this->findLabelIndexes( $this->rows[$this->labelsIndex]->getRawData(), $colList, $this->sharedStringHandler ) ;
+
+	
+	$currentRowIndex = trim( $sheet->row[ count($sheet->row) - 1 ]->attributes()->r ) + 2 ;
+  
+    $title = "" ;
+  
+    foreach( $this->rows as $row ) {
+	  if ( $row->getType() === 'title' ) {
+	    $row->appendSegmentTitleToXML( $sheet, $sharedDest, $this->sharedStringHandler, $currentRowIndex++, $validColList ) ;
+		$title = $row->getTitle() ;
+		//$currentRowIndex++ ;
+		
+		
+		$string = "(in Millions of Dollars)" ;
+		$this->appendStringToXML( $string, '7', $sheet, $sharedDest, $this->sharedStringHandler, $currentRowIndex++, $validColList  ) ;
+		
+		if ( $quarter == "Q1" ) {
+		  $endmsg = "Quarter Ended March 31," ;
+		} else if ( $quarter == "Q2" ) {
+		  $endmsg = "Quarter Ended June 30," ;
+		} else if ( $quarter == "Q3" ) {
+		  $endmsg = "Quarter Ended September 30," ;
+		} else if ( $quarter == "Q4" ) {
+		  $endmsg = "Quarter Ended December 31," ;
+		} else {
+		  $endmsg = "Year Ended December 31," ;
+		}
+		$this->appendStringToXML( $endmsg, '7', $sheet, $sharedDest, $this->sharedStringHandler, $currentRowIndex++, $validColList  ) ;
+	    //$currentRowIndex++ ;
+	  }
+	}
+  
+    $CFstart = $currentRowIndex ;
+  
+    foreach( $this->rows as $row ) {
+	
+	  if ( $row->getType() !== 'title' ) {
+        $row->appendSegmentToXML( $sheet, $sharedDest, $this->sharedStringHandler, $currentRowIndex, $validColList ) ;
+	    $currentRowIndex++ ;
+	  }
+	}
+    
+	$CFend = $currentRowIndex - 1 ;
+	
+	ExcelCF::createGroup( $xml, 'C', $CFstart, $CFend ) ;
+	ExcelCF::createGroup( $xml, 'D', $CFstart, $CFend ) ;
+	
+	$this->appendStringToXML( "Source: " . $title . " company reports.", '9', $sheet, $sharedDest, $this->sharedStringHandler, $currentRowIndex++, $validColList  ) ;
+  }
+   
+  
+  
+  public static function addEmptyRow( $sheet, $currentRowIndex ) {
+    $row = $sheet->addChild('row') ;
+	$row->addAttribute('r', $currentRowIndex) ;
+	//error_log( "Current row index (empty row): " . $currentRowIndex ) ;
+    $row->addAttribute('spans', '1:22') ;
+    $row->addAttribute('x14ac:dyDescent', '0.25') ;
+	return $row ;
+  }
+  
+  private static function fillIndexHeader( $row, $sharedDest, $color ) {
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  1, "", $color ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  2, "2006" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  3, "2007" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  4, "2008" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  5, "2009" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  6, "2010" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  7, "2011" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  8, "2012" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  9, "2013" ) ;
+    ExcelFunctions::addCellToRow( $row, $sharedDest, 10, "2014" ) ;
+  }
+  
+  public static function fillIndexTitleRow( $row, $sharedDest, $label, $color = "" ) {
+  	ExcelFunctions::addCellToRow( $row, $sharedDest,  1, $label, $color ) ;
+	for ( $i = 2 ; $i < 11 ; $i++ ) {
+	  ExcelFunctions::addCellToRow( $row, $sharedDest,  $i, "", $color ) ;
+	}
+  }
+  
+  public static function fillIndexFooterRow( $row, $sharedDest, $label ) {
+  	ExcelFunctions::addCellToRow( $row, $sharedDest,  1, $label, '9' ) ;
+	for ( $i = 2 ; $i < 11 ; $i++ ) {
+	  ExcelFunctions::addCellToRow( $row, $sharedDest,  $i, "", '9' ) ;
+	}
+  }
+  
+  public static function fillGeneralTable( $row, $sharedDest, $label, $color = "" ) {
+  	ExcelFunctions::addCellToRow( $row, $sharedDest,  1, $label, $color ) ;
+	for ( $i = 2 ; $i < 11 ; $i++ ) {
+	  ExcelFunctions::addCellToRow( $row, $sharedDest,  $i, "0" ) ;
+	}
+  }
+  
+  /* duplicate
+  private static function fillIndexHeader( $row, $sharedDest, $color ) {
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  1, "", $color ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  2, "2006" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  3, "2007" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  4, "2008" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  5, "2009" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  6, "2010" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  7, "2011" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  8, "2012" ) ;
+	ExcelFunctions::addCellToRow( $row, $sharedDest,  9, "2013" ) ;
+    ExcelFunctions::addCellToRow( $row, $sharedDest, 10, "2014" ) ;
+  }*/
+  
+    public static function segregx( $x_index ) {
+	  return $x_index - 3 ;
+	}
+  
+    public static function segregtitle( $sheet, $sharedDest, &$currentRowIndex, $title, $colMax ) {
+	  $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	  
+	  ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 2, $title, 26 ) ;
+	  
+	  //foreach( $colList as $x_index => $label ) {
+	  for ( $i = 7 ; $i < $colMax + 3 ; $i++ ) {
+	    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, $i - 4, "", 26 ) ;
+	  }
+	  $currentRowIndex++ ;
+	  $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	  for ( $i = 6 ; $i < $colMax + 3 ; $i++ ) {
+	    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, $i - 4, "", 26 ) ;
+	  }
+	  $currentRowIndex++ ;
+	}
+  
+    public static function appendSegRegTable( $xml, $sharedDest, $companysegments, $segGen, $companyregions, $regGen, $colMax ) {
+	
+	$sheet = $xml->sheetData[0] ;
+	
+	$currentRowIndex = trim( $sheet->row[ count($sheet->row) - 1 ]->attributes()->r ) + 4 ;
+	$currentRowIndex++ ;
+
+	$colList = array() ;
+	$xlist   = array() ;
+	$qtable  = array() ;
+	$qtable['Q1']  = 0 ;
+	$qtable['Q2']  = 1 ; 
+	$qtable['Q3']  = 2 ;
+	$qtable['Q4']  = 3 ;
+	$qtable['YET'] = 4 ;
+
+	$qtable2  = array() ;
+	$qtable2[0] = "Q1" ;
+	$qtable2[1] = "Q2" ; 
+	$qtable2[2] = "Q3" ;
+	$qtable2[3] = "Q4" ;
+	$qtable2[4] = "YET" ;
+	
+	$x = 1 ;
+	
+	// Probably obsolete with the introduction of $colMax variable
+	if ( isset($_POST['year']) && isset($_POST['quarter']) && is_array($_POST['year']) && is_array($_POST['quarter']) ) {
+	  foreach( $_POST['year'] as $year ) {
+		/*
+		if ( $skipfirst == 1 ) {
+	      $skipfirst = 0 ;
+		  continue ;
+		}*/		
+		  
+	    foreach( $_POST['quarter'] as $quarter ) {
+	      //$colList[ $year . $quarter ] = 1 ;
+	      $colList[ $x ] = $year . $quarter ;
+		  $x++ ;
+		  
+		  //echo $year . $quarter . "<br/>" ;
+		  
+		  $xlist[ (($year - 2006) * 5) + $qtable[$quarter] ] = 1 ;
+	    }
+	  }
+	}
+	/*
+	if ( count($_POST['year']) == 0 && count($_POST['quarter']) == 0 ) {
+	  
+	}*/
+	
+
+	
+
+
+	
+	foreach ( $companysegments as $title => $tblrow ) {
+		
+	  if ( count($tblrow) == 0 ) {
+		continue ;
+	  }
+
+	  $currentRowIndex += 5 ;
+	  
+	  
+	  
+
+	  ExcelChart::segregtitle( $sheet, $sharedDest, $currentRowIndex, $title, $colMax ) ;
+	  //$currentRowIndex ;
+	  
+	  $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	  $currentRowIndex++ ;
+	  
+	  //foreach( $colList as $x_index => $label ) {
+	  for ( $i = 6 ; $i < $colMax + 2 ; $i++ ) {
+	    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, $i - 3, (floor(($i - 6) / 5) + 2006) . $qtable2[($i - 6) % 5] ) ;
+	  }	  
+	  
+	  $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	  $currentRowIndex++ ;
+	  $x = 2 ;
+	  $iniX = 5 ;
+
+	 
+	  if ( !isset($companysegments[$title]['total']) || count($companysegments[$title]['total']) == 0 ) {
+	    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 2, $title ) ;
+	    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 3, "Total not found. Check file for total under section." ) ;
+	  } else {
+		  	  // Company total
+	    foreach( $companysegments[$title]['total'] as $x_index => $cell ) {
+
+		  if ( isset($segGen[$title]['total'][$x_index]) ) {
+			$color = 19 ;
+		  } else {
+			$color = 14 ;
+		  }
+		  
+		  if ( $x_index - 4 == 1 ) {
+		    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), $cell, $color ) ;
+          //} else if ( isset($xlist[$x_index - 6]) ) {
+			  
+		  // we always want the full year i think
+          } else {  
+		    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), $cell, $color ) ;
+		  }
+		  $iniX = $x_index ;
+	    } 
+	  
+	  
+	  
+	    // Company % change
+	    $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	    $currentRowIndex++ ;
+		
+	    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 2, "Percent change", 18 ) ;
+	    $x = 2 ;
+	  		// Calculate percent change for each year
+	    foreach( $companysegments[$title]['total']  as $x_index => $cell ) {
+			  
+		  if ( isset( $companysegments[$title]['total'][$x_index] ) && isset( $companysegments[$title]['total'][$x_index - 5] ) && is_numeric($companysegments[$title]['total'][$x_index]) && is_numeric(  $companysegments[$title]['total'][$x_index - 5 ]) && $companysegments[$title]['total'][$x_index - 5 ] != 0 ) {
+		    //if ( isset($xlist[$x_index - 6]) ) {
+		      ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), round(($companysegments[$title]['total'][$x_index] / $companysegments[$title]['total'][$x_index - 5 ]) * 100, 1), 18 ) ;
+		      $x++ ;
+		    //}
+		  }
+	    }
+		  
+		  
+	    // Index
+	    $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	    $currentRowIndex += 2 ;
+		
+	    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 2, "Index_", 13 ) ;
+		  
+	    foreach( $companysegments[$title]['total'] as $x_index => $cell ) {
+		
+	      if ( $x_index > 10 ) {
+		    $ref_index = (($x_index - 11) % 5) + 6 ;
+		      
+			if ( isset($companysegments[$title]['total'][$ref_index]) && is_numeric($companysegments[$title]['total'][$x_index]) && $companysegments[$title]['total'][$ref_index] != 0 ) {
+		      ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), round(($companysegments[$title]['total'][$x_index] / $companysegments[$title]['total'][$ref_index ]) * 100, 1), 13 ) ;
+			}
+	      }
+	      
+	    }  
+	  }
+		
+		
+      // SEGMENTS
+	  foreach( $companysegments[$title] as $segment => $row ) {
+	    if ( strtolower(trim($segment)) == 'total' ) {
+	      continue ;
+		}
+		
+	    $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+		$currentRowIndex++ ;
+	    $x = 2 ;
+		
+	    foreach( $row as $x_index => $cell ) {
+			
+		  if ( isset($segGen[$title][$segment][$x_index]) ) {
+			$color = 19 ;
+		  } else {
+			$color = 14 ;
+		  }
+			
+		  if ( $x_index - 4 == 1 ) {
+			ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), $cell, $color ) ;
+		    $x++ ;
+		  //} else if ( isset($xlist[$x_index - 6]) ) {
+		  } else {
+		    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), $cell, $color ) ;
+		    $x++ ;
+		  } 
+	    }
+	
+
+		// % of change
+		$xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+		$currentRowIndex++ ;
+		ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 2, "Percent Change", 18 ) ;
+	    $x = 8 ;
+			
+		// Calculate percent change for each year
+	    foreach( $row as $x_index => $cell ) {
+			  
+		  if ( isset( $row[$x_index] ) && isset( $row[$x_index - 5] ) && is_numeric($row[$x_index]) && is_numeric($row[$x_index - 5 ]) && $row[$x_index - 5 ] != 0 ) {
+		    //if ( isset($xlist[$x_index - 6]) ) {
+		      ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), round((($row[$x_index] / $row[$x_index - 5 ]) * 100) - 100, 1), 18 ) ;
+		      $x++ ;
+		    //}
+		  }
+	    }	
+	
+
+		// % of total
+		if ( isset( $companysegments[$title]['total'] ) ) {
+			
+		  $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+		  $currentRowIndex++ ;
+		  ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 2, "Percent of total", 25 ) ;
+	      $x = 3 ;
+			
+	      foreach( $row as $x_index => $cell ) {
+			  
+			if ( isset( $companysegments[$title]['total'][$x_index] ) && is_numeric($companysegments[$title]['total'][$x_index]) && $companysegments[$title]['total'][$x_index] != 0 ) {
+		      //if ( isset($xlist[$x_index - 6]) ) {
+		        ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), round(($cell / $companysegments[$title]['total'][$x_index]) * 100, 1), 25 ) ;
+		        $x++ ;
+		      //}
+			}
+	      }
+		}
+		
+		// Index
+	    $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	    $currentRowIndex++ ;
+		
+	    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 2, "Index_", 13 ) ;
+		  
+	    foreach( $row as $x_index => $cell ) {
+		
+	      if ( $x_index > 10 ) {
+		    $ref_index = (($x_index - 11) % 5) + 6 ;
+		      
+			if ( isset($row[$ref_index]) && is_numeric($row[$x_index]) && $row[$ref_index] != 0 ) {
+		      ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), round(($row[$x_index] / $row[$ref_index ]) * 100, 1), 13 ) ;
+			}
+	      }
+	      
+	    }  
+	  }
+	  
+	  
+	  // COMPANY REGIONS
+	  // ******************************************************************* //
+	  if ( !isset($companyregions[$title]) ) {
+	    continue ;
+	  }
+	  foreach( $companyregions[$title] as $region => $row ) {
+	    if ( strtolower(trim($region)) == 'total' ) {
+	      continue ;
+		}
+	    
+	    $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+		$currentRowIndex++ ;
+	    $x = 2 ;
+		
+	    foreach( $row as $x_index => $cell ) {
+			/*
+		  if (  ) {
+				
+	      }*/
+			
+		  if ( isset($regGen[$title][$region][$x_index]) ) {
+			$color = 19 ;
+		  } else {
+			$color = 14 ;
+		  }
+			
+		  if ( $x_index - 4 == 1 ) {
+		    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), $cell, $color ) ;
+		    $x++ ;
+		  //} else if ( isset($xlist[$x_index - 6]) ) {
+		  } else {
+		    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), $cell, $color ) ;
+		    $x++ ;
+		  }
+	    }
+		
+		
+		// % change
+		$xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+		$currentRowIndex++ ;
+		ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 2, "Percent Change", 18 ) ;
+	    $x = 8 ;
+			
+		// Calculate percent change for each year
+	    foreach( $row as $x_index => $cell ) {
+			  
+		  if ( isset( $row[$x_index] ) && isset( $row[$x_index - 5] ) && is_numeric($row[$x_index]) && is_numeric($row[$x_index - 5 ]) && $row[$x_index - 5 ] != 0 ) {
+		    //if ( isset($xlist[$x_index - 6]) ) {
+		      ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), round((($row[$x_index] / $row[$x_index - 5 ]) * 100) - 100, 1), 18 ) ;
+		      $x++ ;
+		    //}
+		  }
+	    }	
+		
+		
+		// % of total
+		if ( isset( $companysegments[$title]['total'] ) ) {
+			
+		  $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+		  $currentRowIndex++ ;
+		  ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 2, "Percent of total", 25 ) ;
+	      $x = 3 ;
+			
+	      foreach( $row as $x_index => $cell ) {
+			  
+			if ( isset( $companysegments[$title]['total'][$x_index] ) && is_numeric($companysegments[$title]['total'][$x_index]) && $companysegments[$title]['total'][$x_index] != 0 ) {
+		      //if ( isset($xlist[$x_index - 6]) ) {
+		        ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), round(($cell / $companysegments[$title]['total'][$x_index]) * 100, 1), 25 ) ;
+		        $x++ ;
+		      //}
+			}
+	      }
+		}
+		
+		// Index
+	    $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	    $currentRowIndex++ ;
+		
+	    ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, 2, "Index_", 13 ) ;
+		  
+	    foreach( $row as $x_index => $cell ) {
+		
+	      if ( $x_index > 10 ) {
+		    $ref_index = (($x_index - 11) % 5) + 6 ;
+		      
+			if ( isset($row[$ref_index]) && is_numeric($row[$x_index]) && $row[$ref_index] != 0 ) {
+		      ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, ExcelChart::segregx($x_index), round(($row[$x_index] / $row[$ref_index ]) * 100, 1), 13 ) ;
+			}
+	      }
+	      
+	    }  
+		
+	  }
+		
+	  /*
+	  $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	  $x = 2 ;
+	  
+	  foreach( $tblrow as $x_index => $tblrowval ) {
+		  
+		  
+		if ( $x_index - 4 == 1  ) {
+		  ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, $x, $tblrowval ) ;
+		  $x++ ;
+		} else if (	isset($xlist[$x_index - 6]) ) {
+		  ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, $x, $tblrowval ) ;
+		  $x++ ;
+		}
+
+	  }
+	  $currentRowIndex++ ;
+	}*/
+    }
+  }
+  
+  
+  public static function appendGeneralTable(  $xml, $sharedDest, $table, $skipfirst= 0, $startrow = "" ) {
+	 
+	$sheet = $xml->sheetData[0] ;
+	
+	if ( $startrow == "" ) {
+	  $currentRowIndex = trim( $sheet->row[ count($sheet->row) - 1 ]->attributes()->r ) + 4 ;
+	} else if ( $startrow > 0 ) {
+	  $currentRowIndex = $startrow ;
+	}
+	
+	$currentRowIndex++ ;
+
+	$colList = array() ;
+	$xlist   = array() ;
+	$qtable  = array() ;
+	$qtable['Q1']  = 0 ;
+	$qtable['Q2']  = 1 ; 
+	$qtable['Q3']  = 2 ;
+	$qtable['Q4']  = 3 ;
+	$qtable['YET'] = 4 ;
+	
+	$x = 1 ;
+	
+	if ( isset($_POST['year']) && isset($_POST['quarter']) && is_array($_POST['year']) && is_array($_POST['quarter']) ) {
+	  foreach( $_POST['year'] as $year ) {
+		if ( $skipfirst == 1 ) {
+	      $skipfirst = 0 ;
+		  continue ;
+		}		
+		  
+	    foreach( $_POST['quarter'] as $quarter ) {
+	      //$colList[ $year . $quarter ] = 1 ;
+	      $colList[ $x ] = $year . $quarter ;
+		  $x++ ;
+		  
+		  //echo $year . $quarter . "<br/>" ;
+		  
+		  $xlist[ (($year - 2006) * 5) + $qtable[$quarter] ] = 1 ;
+	    }
+	  }
+	}
+	
+	if ( count($colList) == 0 ) {
+		
+	}
+	
+
+	
+	$xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	$currentRowIndex++ ;
+	foreach( $colList as $x_index => $label ) {
+	  ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, $x_index + 2, $label ) ;
+	}
+	
+	foreach ( $table as $title => $tblrow ) {
+		
+	  if ( count($tblrow) == 0 ) {
+		continue ;
+	  }
+	  $xmlrow = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+	  $x = 2 ;
+	  
+	  foreach( $tblrow as $x_index => $tblrowval ) {
+		  
+		  
+		if ( $x_index - 4 == 1  ) {
+		  ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, $x, $tblrowval ) ;
+		  $x++ ;
+		} else if (	isset($xlist[$x_index - 6]) ) {
+		  ExcelFunctions::addCellToRow( $xmlrow, $sharedDest, $x, $tblrowval ) ;
+		  $x++ ;
+		}
+
+	  }
+	  $currentRowIndex++ ;
+	}
+	//die() ;
+	//die("remember to remove this die statement") ;
+  }
+  
+  
+  public static function insertGeneralTable( $table, $table_id, $set_id, $category ) {
+
+	$colList = array() ;
+	$xlist = array() ;
+	$qtable = array() ;
+	$qtable['Q1'] = 0 ;
+	$qtable['Q2'] = 1 ;
+	$qtable['Q3'] = 2 ;
+	$qtable['Q4'] = 3 ;
+	$qtable['YET'] = 4 ;
+	
+	$category = mysql_real_escape_string( $category ) ;
+	$set_id   = mysql_real_escape_string( $set_id ) ;
+	$table_id = mysql_real_escape_string( $table_id ) ;
+	$x = 1 ;
+	
+	//die( "this must happen. please work. table count: " . count( $table ) ) ;
+	
+	foreach ( $table as $title => $tblrow ) {
+		
+	  //die( "Wow this happens. I cannot believe it :O" ) ;	
+	  $x = 2 ;
+	  
+	  $title = "" ;
+	  $year   = 2006 ;
+	  $pyear  = 2006 ;
+	  $q1 = "" ;
+	  $q2 = "" ;
+	  $q3 = "" ;
+	  $q4 = "" ;
+	  $yet = "" ;
+	  $freshinsert = 0 ;
+	  
+	  foreach( $tblrow as $x_index => $tblrowval ) {
+		  
+		$year = 2005 + ((int)(($x_index-1) / 5)) ;
+		if ( $pyear != $year && $year > 2005 ) {
+		  
+		  $query = "INSERT INTO EE2_4tables (set_id, title, table_id, year, category, Q1, Q2, Q3, Q4, YET) values('".$set_id."','".$title."','".$table_id."','".$pyear."','".$category."','".$q1."','".$q2."','".$q3."','".$q4."','".$yet."')" ;
+		  mysql_query( $query ) or die( error_log( "insertGeneralTable: " . mysql_error() ) ) ;
+		  $q1  = "" ;
+	      $q2  = "" ;
+	      $q3  = "" ;
+	      $q4  = "" ;
+		  $yet = "" ;
+		  $freshinsert = 0 ;
+		  $pyear = $year ;
+		}		
+		  
+		  
+		if ( $x_index - 4 < 1 ) {
+	      continue ;
+		} else if ( $x_index - 4 == 1  ) {
+		  $title = $tblrowval ;
+		} else if ( !is_numeric($tblrowval) ) {
+		  continue ;
+		} else if ( ($x_index-6) % 5 == 0 ) {
+	      $freshinsert = 1 ;
+		  $q1 = $tblrowval ;
+		} else if ( ($x_index-6) % 5 == 1 ) {
+		  $freshinsert = 1 ;
+		  $q2 = $tblrowval ;			
+		} else if ( ($x_index-6) % 5 == 2 ) {
+		  $freshinsert = 1 ;
+		  $q3 = $tblrowval ;
+		} else if ( ($x_index-6) % 5 == 3 ) {
+		  $freshinsert = 1 ;
+		  $q4 = $tblrowval ;
+		} else if ( ($x_index-6) % 5 == 4 ) {
+		  $yet = $tblrowval ;
+		} 
+	  }
+
+      if ( $freshinsert == 1 ) {
+		$query = "INSERT INTO EE2_4tables (set_id, title, table_id, year, category, Q1, Q2, Q3, Q4, YET) values('".$set_id."','".$title."','".$table_id."','".$year."','".$category."','".$q1."','".$q2."','".$q3."','".$q4."','".$yet."')" ;
+		mysql_query( $query ) or die( error_log( "insertGeneralTable: " . mysql_error() ) ) ; 
+	  }
+	}
+  }
+  
+
+  public static function appendIndexChartsv2( $xml, $sharedDest, $set, $tags ) {
+  
+    $oklabels = array() ;
+  
+    foreach( explode(',', $tags) as $tag ) {
+      $oklabels[trim($tag)] = 1 ;
+    }	
+  
+    $sheet = $xml->sheetData[0] ;
+ 
+ 
+	$currentRowIndex = trim( $sheet->row[ count($sheet->row) - 1 ]->attributes()->r ) + 11 ;
+	 
+	//error_log( "Previous row number: " . $sheet->row[ count($sheet->row) - 1 ]->attributes()->r ) ;
+	//error_log( "Current row index (start): " . $currentRowIndex ) ;
+  
+    $query = "SELECT row_id, label, x_index, y_index, value FROM EE2_values WHERE set_id='".mysql_real_escape_string($set)."' ORDER BY row_id ASC, y_index ASC, x_index ASC ;" ;
+    $query = mysql_query( $query ) or die( "ExcelChart::appendIndexCharts query: " . mysql_error() ) ;
+	
+    $cur_row_id   = "-1" ;
+	$cur_title    = "" ;
+	$cur_row_type = "" ;
+    $cur_range    = "" ; 
+	
+	while( $temp = mysql_fetch_array( $query, MYSQL_ASSOC ) ) {
+	  
+	  if ( !isset($oklabels[$temp['label']]) ) {
+	    continue ;
+	  }
+	  
+	  if ( $temp['row_id'] != $cur_row_id ) {
+	    $cur_row_id = $temp['row_id'] ;
+		$cur_row_type = "" ;
+		$cur_range    = "" ;
+	  } else if ( $cur_range !== "" && $temp['x_index'] > $cur_range ) {
+	    continue ;
+	  }
+	  
+	  if ( $temp['x_index'] == 4 ) {
+	    $cur_range = PHPExcel_Cell::columnIndexFromString( $temp['value'] ) - 1 ;
+	  }
+	  
+	  if ( $temp['x_index'] == 2  ) {
+	    $cur_row_type = strtolower($temp['value']) ;
+		if ( $cur_row_type == "series" ) {
+		  // Generate row spots
+		  
+		  // error_log( "NEW SERIES: " . $temp['label'] ) ;
+		  
+		  $chart1 = array() ;
+		  $chart3 = array() ;
+		  
+		  for ( $i = 0 ; $i < 6 ; $i++ ) {
+		    $currentRowIndex += 1 ;
+		    $chart1[] = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+
+		  }
+		  ExcelChart::fillIndexHeader( $chart1[0], $sharedDest, '' ) ;
+		  ExcelChart::fillIndexRow( $chart1[1], $sharedDest, "1st Quarter" ) ;
+		  ExcelChart::fillIndexRow( $chart1[2], $sharedDest, "2nd Quarter" ) ;
+		  ExcelChart::fillIndexRow( $chart1[3], $sharedDest, "3rd Quarter" ) ;
+		  ExcelChart::fillIndexRow( $chart1[4], $sharedDest, "4th Quarter" ) ;
+		  ExcelChart::fillIndexRow( $chart1[5], $sharedDest, "Full Year" ) ;
+		  
+		  $currentRowIndex += 14 ;
+		  
+		  for ( $i = 0 ; $i < 11 ; $i++ ) {
+		    $currentRowIndex += 1 ;
+			$chart3[] = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+		  }
+		  ExcelChart::fillIndexTitleRow( $chart3[0], $sharedDest, "", '7' ) ; 
+		  ExcelChart::fillIndexTitleRow( $chart3[1], $sharedDest, "(in Millions of Dollars)", '7' ) ; 
+		  ExcelChart::fillIndexTitleRow( $chart3[2], $sharedDest, "Year Ended December 31,", '7' ) ; 
+		  ExcelChart::fillIndexHeader( $chart3[3], $sharedDest, '8' ) ;
+		  ExcelChart::fillIndexRow( $chart3[4], $sharedDest, "", '8' ) ; 
+		  ExcelChart::fillIndexRow( $chart3[5], $sharedDest, "1st Quarter", '8' ) ;
+		  ExcelChart::fillIndexRow( $chart3[6], $sharedDest, "2nd Quarter", '8' ) ;
+		  ExcelChart::fillIndexRow( $chart3[7], $sharedDest, "3rd Quarter", '8' ) ;
+		  ExcelChart::fillIndexRow( $chart3[8], $sharedDest, "4th Quarter", '8' ) ;
+		  ExcelChart::fillIndexRow( $chart3[9], $sharedDest, "Full Year", '8' ) ; 
+		  ExcelChart::fillIndexFooterRow( $chart3[10], $sharedDest, "Source: " . $cur_title ) ; 
+		 
+		  $currentRowIndex += 14 ;
+		}
+	  }
+	  
+	  if ( $temp['x_index'] == 5 && $cur_row_type == "title" ) {
+	    $cur_title = $temp['value'] ;
+	  }
+	  
+	  if ( $temp['x_index'] == 5 && $cur_row_type == "series" ) {
+	    ExcelFunctions::setCellValue( $chart1[0]->c[0], $cur_title . " " . $temp['value'] . " Revenue", $sharedDest ) ;
+	    ExcelFunctions::setCellValue( $chart3[0]->c[0], $cur_title . " " . $temp['value'] . " Market Share", $sharedDest ) ;
+	  }
+	  
+	  if ( $temp['x_index'] >= 6 && $cur_row_type == "series" ) {
+	    $x = $temp['x_index'] - 6 ;
+        $chart1[ ($x % 5) + 1 ]->c[ intval(floor( $x / 5 ) + 1) ]->v[0] = $temp['value'] ;
+        $chart3[ ($x % 5) + 5 ]->c[ intval(floor( $x / 5 ) + 1) ]->v[0] = $temp['value'] ;
+	  }
+	  
+	}
+  }
+  
+  
+  public static function appendIndexCharts( $xml, $sharedDest, $set ) {
+  
+    $sheet = $xml->sheetData[0] ;
+ 
+	$currentRowIndex = trim( $sheet->row[ count($sheet->row) - 1 ]->attributes()->r ) + 11 ;
+	 
+	//error_log( "Previous row number: " . $sheet->row[ count($sheet->row) - 1 ]->attributes()->r ) ;
+	//error_log( "Current row index (start): " . $currentRowIndex ) ;
+  
+    $query = "SELECT row_id, label, x_index, y_index, value FROM EE2_values WHERE set_id='".mysql_real_escape_string($set)."' ORDER BY row_id ASC, y_index ASC, x_index ASC ;" ;
+    $query = mysql_query( $query ) or die( "ExcelChart::appendIndexCharts query: " . mysql_error() ) ;
+	
+    $cur_row_id   = "-1" ;
+	$cur_title    = "" ;
+	$cur_row_type = "" ;
+    $cur_range = "" ; 
+	
+	while( $temp = mysql_fetch_array( $query, MYSQL_ASSOC ) ) {
+	  /*
+	  if ( $currentRowIndex > 50 ) {
+	    die("Temporary stopping point") ; 
+	  }*/
+	  
+	  if ( $temp['row_id'] != $cur_row_id ) {
+	    $cur_row_id = $temp['row_id'] ;
+		$cur_row_type = "" ;
+		$cur_range    = "" ;
+	  } else if ( $cur_range !== "" && $temp['x_index'] > $cur_range ) {
+	    continue ;
+	  }
+	  
+	  if ( $temp['x_index'] == 4 ) {
+	    $cur_range = PHPExcel_Cell::columnIndexFromString( $temp['value'] ) - 1 ;
+	  }
+	  
+	  if ( $temp['x_index'] == 2  ) {
+	    $cur_row_type = strtolower($temp['value']) ;
+		if ( $cur_row_type == "series" ) {
+		  // Generate row spots
+		  
+		  // error_log( "NEW SERIES: " . $temp['label'] ) ;
+		  
+		  $chart1 = array() ;
+		  $chart3 = array() ;
+		  
+		  for ( $i = 0 ; $i < 6 ; $i++ ) {
+		    $currentRowIndex += 1 ;
+		    $chart1[] = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+
+		  }
+		  ExcelChart::fillIndexHeader( $chart1[0], $sharedDest ) ;
+		  ExcelChart::fillIndexRow( $chart1[1], $sharedDest, "1st Quarter" ) ;
+		  ExcelChart::fillIndexRow( $chart1[2], $sharedDest, "2nd Quarter" ) ;
+		  ExcelChart::fillIndexRow( $chart1[3], $sharedDest, "3rd Quarter" ) ;
+		  ExcelChart::fillIndexRow( $chart1[4], $sharedDest, "4th Quarter" ) ;
+		  ExcelChart::fillIndexRow( $chart1[5], $sharedDest, "Full Year" ) ;
+		  
+		  $currentRowIndex += 14 ;
+		  
+		  for ( $i = 0 ; $i < 11 ; $i++ ) {
+		    $currentRowIndex += 1 ;
+			$chart3[] = ExcelChart::addEmptyRow( $sheet, $currentRowIndex ) ;
+		  }
+		  ExcelChart::fillIndexTitleRow( $chart3[0], $sharedDest, "", '7' ) ; 
+		  ExcelChart::fillIndexTitleRow( $chart3[1], $sharedDest, "(in Millions of Dollars)", '7' ) ; 
+		  ExcelChart::fillIndexTitleRow( $chart3[2], $sharedDest, "Year Ended December 31,", '7' ) ; 
+		  ExcelChart::fillIndexHeader( $chart3[3], $sharedDest, '8' ) ;
+		  ExcelChart::fillIndexRow( $chart3[4], $sharedDest, "", '8' ) ; 
+		  ExcelChart::fillIndexRow( $chart3[5], $sharedDest, "1st Quarter", '8' ) ;
+		  ExcelChart::fillIndexRow( $chart3[6], $sharedDest, "2nd Quarter", '8' ) ;
+		  ExcelChart::fillIndexRow( $chart3[7], $sharedDest, "3rd Quarter", '8' ) ;
+		  ExcelChart::fillIndexRow( $chart3[8], $sharedDest, "4th Quarter", '8' ) ;
+		  ExcelChart::fillIndexRow( $chart3[9], $sharedDest, "Full Year", '8' ) ; 
+		  ExcelChart::fillIndexFooterRow( $chart3[10], $sharedDest, "Source: " . $cur_title ) ; 
+		 
+		  $currentRowIndex += 14 ;
+		}
+	  }
+	  
+	  if ( $temp['x_index'] == 5 && $cur_row_type == "title" ) {
+	    $cur_title = $temp['value'] ;
+	  }
+	  
+	  if ( $temp['x_index'] == 5 && $cur_row_type == "series" ) {
+	    ExcelFunctions::setCellValue( $chart1[0]->c[0], $cur_title . " " . $temp['value'] . " Revenue", $sharedDest ) ;
+	    ExcelFunctions::setCellValue( $chart3[0]->c[0], $cur_title . " " . $temp['value'] . " Market Share", $sharedDest ) ;
+	  }
+	  
+	  if ( $temp['x_index'] >= 6 && $cur_row_type == "series" ) {
+	    $x = $temp['x_index'] - 6 ;
+        $chart1[ ($x % 5) + 1 ]->c[ intval(floor( $x / 5 ) + 1) ]->v[0] = $temp['value'] ;
+        $chart3[ ($x % 5) + 5 ]->c[ intval(floor( $x / 5 ) + 1) ]->v[0] = $temp['value'] ;
+	  }
+	  
+	}
+  }
+  
+  
+}
+
+
+
+
+
+?>

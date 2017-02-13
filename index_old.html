@@ -1,0 +1,27 @@
+<html>
+  <head>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+  </head>
+  <body>
+    <table>
+    </table>
+    <script>
+rows = new Array() ;
+
+for( var i = 0 ; i < 100 ; i++ ) {
+    var row = $("<tr>").appendTo("table") ;
+    rows.push( new Array() ) ;
+    
+    for( var j = 0 ; j < 50 ; j++ ) {
+      cell = $("<td>").appendTo(row) ;
+      rows[rows.length - 1].push( cell ) ;
+    }
+}
+    $.getJSON( "excelextractor.php", function(data){
+      $.each( data, function(key, val){
+        $(rows[parseInt(val[1])][parseInt(val[0])]).text( val[2] ) ;
+      }) ; 
+    }) ;
+    </script>
+  </body>
+</html>
