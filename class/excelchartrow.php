@@ -1,8 +1,4 @@
 <?php
-
-
-//include_once $_SERVER['DOCUMENT_ROOT'] . "/exceltool/Classes/PHPExcel.php" ;
-
 class ExcelChartRow {
 
   // private $rawData ; 
@@ -25,7 +21,7 @@ class ExcelChartRow {
     
     foreach( $row->c as $key => $cell ) {
       $col = ExcelFunctions::getCellCol( $rowId, $cell ) ;
-      $col = PHPExcel_Cell::columnIndexFromString( $col ) ;
+      $col = ExcelFunctions::columnIndexFromString( $col ) ;
       if ( $col > ExcelChartRow::$largestColNumber ) {
         ExcelChartRow::$largestColNumber = $col ;
       }
@@ -90,7 +86,7 @@ class ExcelChartRow {
       
       
       $colLetter = ExcelFunctions::stripCellCol( $cell ) ;
-      $colLetter = PHPExcel_Cell::stringFromColumnIndex( PHPExcel_Cell::columnIndexFromString($colLetter) - 1 ) ;
+      $colLetter = ExcelFunctions::stringFromColumnIndex( ExcelFunctions::columnIndexFromString($colLetter) - 1 ) ;
       $newcell['r'] = $colLetter . $currentRowIndex ;
       
       

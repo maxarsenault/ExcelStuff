@@ -1,6 +1,4 @@
-#json-dump{
-  display:none;
-}
+/* Top of the screen */
 #tool-bar{
   border-bottom:2px solid #ddd;
   padding:8px 0;
@@ -10,6 +8,25 @@
   width:350px;
   margin:0 auto;
 }
+.upload-label {
+  cursor:pointer;
+  border:1px solid #000;
+  border-radius:5px;
+  padding:5px;
+  background:#446;
+  color:#fff;
+}
+.upload-label:hover {
+  background:#558;
+}
+[type=file]{
+	width: 0.1px;
+	height: 0.1px;
+	opacity: 0;
+	overflow: hidden;
+	position: absolute;
+	z-index: -1;
+}
 form {
   padding:0;
   margin:0;
@@ -17,6 +34,7 @@ form {
 html{
   font-family: sans-serif;
 }
+/* Table grid */
 #table{
   display:table;
   margin:0;
@@ -41,26 +59,4 @@ html{
 }
 .thead {
   text-align:center;
-}
-.tside{
-  
-}
-.upload-label {
-  cursor:pointer;
-  border:1px solid #000;
-  border-radius:5px;
-  padding:5px;
-  background:#446;
-  color:#fff;
-}
-.upload-label:hover {
-  background:#558;
-}
-[type=file]{
-	width: 0.1px;
-	height: 0.1px;
-	opacity: 0;
-	overflow: hidden;
-	position: absolute;
-	z-index: -1;
 }
